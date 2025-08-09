@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
+import { ItemsModule } from './items/items.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
       migrationsRun: process.env.NODE_ENV === 'production', // Auto-run migrations in production
     }),
     ShoppingListsModule,
+    ItemsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
