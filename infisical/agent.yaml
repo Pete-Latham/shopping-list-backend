@@ -1,0 +1,36 @@
+# Infisical Agent Configuration
+# This file configures the Infisical agent to fetch secrets for the shopping list application
+
+# Auth configuration
+auth:
+  type: "service-token"
+
+# Socket configuration for IPC with containers
+socket:
+  listen: "/var/run/infisical/agent.sock"
+
+# Templates define how secrets are transformed and made available
+templates:
+  - source_path: "/etc/infisical/backend-env.tpl"
+    destination_path: "/var/run/infisical/backend.env"
+    config:
+      polling_interval: "60s"
+      
+  - source_path: "/etc/infisical/frontend-env.tpl"
+    destination_path: "/var/run/infisical/frontend.env"
+    config:
+      polling_interval: "60s"
+
+# Vault configuration
+vault:
+  kv_mount_path: "shopping-list"
+  
+# Logging
+logging:
+  level: "info"
+  format: "json"
+  
+# Health check endpoint
+health_check:
+  enabled: true
+  port: 8080

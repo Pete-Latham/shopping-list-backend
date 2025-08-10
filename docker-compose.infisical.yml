@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Infisical Agent - Fetches secrets and exposes them to other containers
+  infisical-agent:
+    image: infisical/infisical:latest-agent
+    container_name: shopping-list-secrets
+    restart: unless-stopped
+    command: ["infisical", "agent", "--config", "/etc/infisical/agent.yaml"]
+    environment:
+      # Infisical configuration
+      INFISICAL_TOKEN: ${INFISICAL_SERVICE_TOKEN}  # Set this in your host environment
+    volumes:
+      - ./infisical/agent.yaml:/etc/infisical/agent.yaml:ro
+      - secrets_socket:/var/run/infisical
+      - ./logs/infisical:/app/logs
+    healthcheck:
+      test: ["CMD", "infisical", "agent", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - default
+
+  # PostgreSQL Database - No changes needed
+  postgres:
+    # ... existing postgres config remains the same
+    depends_on:
+      - infisical-agent
+    
+  # NestJS Application - Modified to use secrets from Infisical
+  app:
+    # ... existing build config
+    depends_on:
+      infisical-agent:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Database connection - these will be injected by Infisical agent
+      DB_HOST: postgres
+      DB_PORT: 5432
+      # Remove hardcoded secrets - they'll come from Infisical
+    volumes:
+      - ./logs:/app/logs
+      - secrets_socket:/var/run/infisical:ro
+    # Override entrypoint to load secrets before starting app
+    entrypoint: ["/usr/local/bin/docker-entrypoint-with-secrets.sh"]
+
+  # Frontend (if running containerized)
+  frontend:
+    # ... existing frontend config
+    depends_on:
+      - infisical-agent
+    volumes:
+      - secrets_socket:/var/run/infisical:ro
+    entrypoint: ["/usr/local/bin/docker-entrypoint-with-secrets.sh"]
+
+volumes:
+  secrets_socket:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: shopping-list-network
