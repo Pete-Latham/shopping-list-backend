@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Backup Service - Automated database backups
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    container_name: shopping-list-backup
+    restart: unless-stopped
+    environment:
+      # Backup Configuration
+      BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM (adjust as needed)
+      CONTAINER_NAME: shopping-list-db
+      DB_NAME: shopping_list
+      DB_USER: postgres
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: 30
+      MAX_BACKUPS: 50
+      
+      # Notification settings (optional)
+      NOTIFICATION_EMAIL: ""  # Add your email for backup notifications
+      SMTP_SERVER: ""
+      SMTP_PORT: "587"
+      SMTP_USER: ""
+      SMTP_PASS: ""
+    volumes:
+      # Mount Docker socket to access other containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+      # Backup storage - adjust path for your Synology
+      - /volume1/docker/shopping-list-backups:/backups
+      
+      # Mount timezone data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      
+      # Logs
+      - ./logs/backup:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/backup-database.sh"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    external: true
+    name: shopping-list-network

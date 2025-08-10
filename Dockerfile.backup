@@ -1,0 +1,119 @@
+FROM alpine:3.19
+
+# Install required packages
+RUN apk add --no-cache \
+    bash \
+    docker-cli \
+    postgresql-client \
+    curl \
+    gzip \
+    findutils \
+    coreutils \
+    dcron \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Create app directory and user
+RUN addgroup -g 1001 backup && \
+    adduser -D -u 1001 -G backup backup
+
+WORKDIR /app
+
+# Copy backup scripts
+COPY scripts/backup-database.sh ./backup-database.sh
+COPY scripts/restore-database.sh ./restore-database.sh
+
+# Make scripts executable
+RUN chmod +x ./backup-database.sh ./restore-database.sh
+
+# Create cron job wrapper script
+RUN cat > /app/backup-cron.sh << 'EOF'
+#!/bin/bash
+set -euo pipefail
+
+# Source environment variables
+source /app/backup-env
+
+# Log start
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting scheduled backup..." >> /app/logs/backup.log
+
+# Run backup script
+/app/backup-database.sh >> /app/logs/backup.log 2>&1
+
+# Log completion
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Scheduled backup completed" >> /app/logs/backup.log
+EOF
+
+RUN chmod +x /app/backup-cron.sh
+
+# Create environment file template
+RUN cat > /app/backup-env << 'EOF'
+# Backup environment variables
+export CONTAINER_NAME=${CONTAINER_NAME:-shopping-list-db}
+export DB_NAME=${DB_NAME:-shopping_list}
+export DB_USER=${DB_USER:-postgres}
+export BACKUP_DIR=${BACKUP_DIR:-/backups}
+export RETENTION_DAYS=${RETENTION_DAYS:-30}
+export MAX_BACKUPS=${MAX_BACKUPS:-50}
+EOF
+
+# Create entrypoint script
+RUN cat > /app/entrypoint.sh << 'EOF'
+#!/bin/bash
+set -euo pipefail
+
+# Create logs directory
+mkdir -p /app/logs
+
+# Update backup environment file with current env vars
+cat > /app/backup-env << EOL
+export CONTAINER_NAME="${CONTAINER_NAME:-shopping-list-db}"
+export DB_NAME="${DB_NAME:-shopping_list}"
+export DB_USER="${DB_USER:-postgres}"
+export BACKUP_DIR="${BACKUP_DIR:-/backups}"
+export RETENTION_DAYS="${RETENTION_DAYS:-30}"
+export MAX_BACKUPS="${MAX_BACKUPS:-50}"
+EOL
+
+# Create backup directory
+mkdir -p "${BACKUP_DIR:-/backups}"
+
+# Set up cron job
+BACKUP_SCHEDULE="${BACKUP_SCHEDULE:-0 2 * * *}"
+echo "$BACKUP_SCHEDULE /app/backup-cron.sh" > /tmp/crontab
+crontab /tmp/crontab
+
+# Log startup
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backup service starting..." >> /app/logs/backup.log
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backup schedule: $BACKUP_SCHEDULE" >> /app/logs/backup.log
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backup directory: ${BACKUP_DIR:-/backups}" >> /app/logs/backup.log
+
+# Start cron daemon
+exec crond -f -d 8
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# Create manual backup script for immediate use
+RUN cat > /app/backup-now.sh << 'EOF'
+#!/bin/bash
+set -euo pipefail
+
+echo "Running manual backup..."
+source /app/backup-env
+/app/backup-database.sh
+EOF
+
+RUN chmod +x /app/backup-now.sh
+
+# Set ownership
+RUN chown -R backup:backup /app
+
+# Switch to backup user
+USER backup
+
+# Health check
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD test -f /app/backup-database.sh || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
