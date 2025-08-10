@@ -50,7 +50,19 @@ export interface JwtPayload {
   username: string;
 }
 
+export class RefreshTokenDto {
+  @IsString()
+  @IsNotEmpty()
+  refreshToken: string;
+}
+
 export interface LoginResponse {
   access_token: string;
+  refresh_token: string;
   user: AuthUser;
+}
+
+export interface RefreshResponse {
+  access_token: string;
+  refresh_token: string;
 }

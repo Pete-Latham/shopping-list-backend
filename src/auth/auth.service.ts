@@ -2,9 +2,11 @@ import { Injectable, UnauthorizedException, ConflictException, BadRequestExcepti
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { User } from './entities/user.entity';
-import { RegisterDto, LoginDto, ChangePasswordDto, AuthUser, JwtPayload, LoginResponse } from './dto/auth.dto';
+import { RegisterDto, LoginDto, ChangePasswordDto, AuthUser, JwtPayload, LoginResponse, RefreshResponse } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +14,7 @@ export class AuthService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async register(registerDto: RegisterDto): Promise<AuthUser> {
@@ -68,7 +71,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Generate JWT
+    // Generate tokens
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -76,9 +79,11 @@ export class AuthService {
     };
 
     const access_token = this.jwtService.sign(payload);
+    const refresh_token = await this.generateRefreshToken(user.id);
 
     return {
       access_token,
+      refresh_token,
       user: {
         id: user.id,
         email: user.email,
@@ -135,5 +140,85 @@ export class AuthService {
       email: user.email,
       username: user.username,
     };
+  }
+
+  async generateRefreshToken(userId: number): Promise<string> {
+    // Generate a secure random token
+    const refreshToken = crypto.randomBytes(64).toString('hex');
+    
+    // Calculate expiry date
+    const expiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
+    const expiryDate = new Date();
+    
+    // Parse expiry string (e.g., '7d', '24h', '30m')
+    if (expiresIn.endsWith('d')) {
+      expiryDate.setDate(expiryDate.getDate() + parseInt(expiresIn.slice(0, -1)));
+    } else if (expiresIn.endsWith('h')) {
+      expiryDate.setHours(expiryDate.getHours() + parseInt(expiresIn.slice(0, -1)));
+    } else if (expiresIn.endsWith('m')) {
+      expiryDate.setMinutes(expiryDate.getMinutes() + parseInt(expiresIn.slice(0, -1)));
+    } else {
+      // Default to 7 days if format is unknown
+      expiryDate.setDate(expiryDate.getDate() + 7);
+    }
+
+    // Hash the token before storing
+    const hashedToken = await bcrypt.hash(refreshToken, 12);
+    
+    // Store hashed token in database
+    await this.userRepository.update(userId, {
+      refreshToken: hashedToken,
+      refreshTokenExpiresAt: expiryDate,
+    });
+
+    return refreshToken;
+  }
+
+  async refreshTokens(refreshToken: string): Promise<RefreshResponse> {
+    // Find all active users that have refresh tokens
+    const users = await this.userRepository.find({
+      where: {
+        isActive: true,
+      },
+    });
+
+    let user: User | null = null;
+    
+    // Check each user's hashed refresh token
+    for (const u of users) {
+      if (u.refreshToken && u.refreshTokenExpiresAt && u.refreshTokenExpiresAt > new Date()) {
+        const isValidToken = await bcrypt.compare(refreshToken, u.refreshToken);
+        if (isValidToken) {
+          user = u;
+          break;
+        }
+      }
+    }
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // Generate new tokens
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+    };
+
+    const access_token = this.jwtService.sign(payload);
+    const new_refresh_token = await this.generateRefreshToken(user.id);
+
+    return {
+      access_token,
+      refresh_token: new_refresh_token,
+    };
+  }
+
+  async revokeRefreshToken(userId: number): Promise<void> {
+    await this.userRepository.update(userId, {
+      refreshToken: null,
+      refreshTokenExpiresAt: null,
+    });
   }
 }

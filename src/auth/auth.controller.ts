@@ -2,7 +2,7 @@ import { Controller, Post, Get, Body, UseGuards, Request, ValidationPipe } from 
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RegisterDto, LoginDto, ChangePasswordDto, LoginResponse, AuthUser } from './dto/auth.dto';
+import { RegisterDto, LoginDto, ChangePasswordDto, RefreshTokenDto, LoginResponse, AuthUser, RefreshResponse } from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -40,6 +40,7 @@ export class AuthController {
       // Return a mock response when auth is disabled
       return {
         access_token: 'mock-token',
+        refresh_token: 'mock-refresh-token',
         user: { id: 1, email: 'dev@example.com', username: 'dev' }
       };
     }
@@ -73,5 +74,29 @@ export class AuthController {
 
     await this.authService.changePassword(req.user.id, changePasswordDto);
     return { message: 'Password changed successfully' };
+  }
+
+  @Post('refresh')
+  async refreshTokens(@Body(ValidationPipe) refreshTokenDto: RefreshTokenDto): Promise<RefreshResponse> {
+    const authEnabled = this.configService.get<boolean>('AUTH_ENABLED', true);
+    
+    if (!authEnabled) {
+      throw new Error('Token refresh is not available when authentication is disabled');
+    }
+
+    return this.authService.refreshTokens(refreshTokenDto.refreshToken);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@Request() req): Promise<{ message: string }> {
+    const authEnabled = this.configService.get<boolean>('AUTH_ENABLED', true);
+    
+    if (!authEnabled) {
+      return { message: 'Logged out successfully' };
+    }
+
+    await this.authService.revokeRefreshToken(req.user.id);
+    return { message: 'Logged out successfully' };
   }
 }
