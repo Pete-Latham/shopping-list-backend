@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
 import { ItemsModule } from './items/items.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ItemsModule } from './items/items.module';
       synchronize: false, // Disabled - using migrations instead
       migrationsRun: process.env.NODE_ENV === 'production', // Auto-run migrations in production
     }),
+    AuthModule,
     ShoppingListsModule,
     ItemsModule,
   ],

@@ -7,6 +7,10 @@ services:
       target: builder
     environment:
       NODE_ENV: development
+      # Authentication Configuration (can be toggled for development)
+      AUTH_ENABLED: true
+      JWT_SECRET: dev-jwt-secret-key-not-for-production
+      JWT_EXPIRES_IN: 24h
     volumes:
       - .:/app
       - /app/node_modules
