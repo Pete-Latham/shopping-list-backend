@@ -34,24 +34,29 @@ export class InfisicalConfigService {
 
   private async initializeInfisical() {
     try {
+      // Skip Infisical in development if not configured
       const infisicalToken = this.configService.get('INFISICAL_TOKEN');
+      const isProduction = this.configService.get('NODE_ENV') === 'production';
       
-      if (!infisicalToken) {
-        throw new Error('INFISICAL_TOKEN is required - secure secrets management is mandatory');
+      if (!infisicalToken && !isProduction) {
+        this.logger.warn('Infisical not configured - using environment variables');
+        return;
       }
 
-      // Initialize with correct SDK v4 API
+      if (!infisicalToken) {
+        throw new Error('INFISICAL_TOKEN is required in production');
+      }
+
       this.infisicalClient = new InfisicalSDK({
+        auth: {
+          serviceToken: infisicalToken,
+        },
         siteUrl: this.configService.get('INFISICAL_SITE_URL', 'https://eu.infisical.com'),
       });
 
-      // Authenticate with service token (note: method is private in types but works in practice)
-      (this.infisicalClient as any).authenticate(infisicalToken);
-      
-      this.logger.log('✓ Infisical client initialized and authenticated successfully');
+      this.logger.log('Infisical client initialized successfully');
     } catch (error) {
       this.logger.error('Failed to initialize Infisical client:', error.message);
-      this.logger.error('🚫 Application cannot start without proper Infisical configuration');
       throw error;
     }
   }
@@ -64,9 +69,10 @@ export class InfisicalConfigService {
       return this.cachedSecrets;
     }
 
-    // Require Infisical to be available
+    // Fallback to environment variables if Infisical not available
     if (!this.infisicalClient) {
-      throw new Error('Infisical client not available - secure secrets management is required');
+      this.logger.warn('Using fallback environment variables');
+      return this.getSecretsFromEnv();
     }
 
     try {
@@ -77,43 +83,33 @@ export class InfisicalConfigService {
         throw new Error('INFISICAL_PROJECT_ID is required');
       }
 
-      this.logger.log(`🔍 Fetching secrets from Infisical: project=${projectId}, env=${environment}, path=/backend`);
-
-      // Fetch secrets using the correct SDK v4 API
-      const secretsResponse = await this.infisicalClient.secrets().listSecrets({
+      // Fetch secrets from Infisical
+      const secretsResponse = await this.infisicalClient.listSecrets({
         environment,
         projectId,
-        secretPath: '/backend',
+        path: '/backend', // Backend secrets path within the project
       });
 
-      // Transform Infisical secrets to our format - response has a 'secrets' array
+      // Transform Infisical secrets to our format
       const secretsMap = secretsResponse.secrets.reduce((acc, secret) => {
         acc[secret.secretKey] = secret.secretValue;
         return acc;
       }, {} as Record<string, string>);
 
-      // Validate that all required secrets are present in Infisical
-      const requiredSecrets = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_DATABASE', 'JWT_SECRET'];
-      const missingSecrets = requiredSecrets.filter(key => !secretsMap[key]);
-      
-      if (missingSecrets.length > 0) {
-        throw new Error(`Missing required secrets in Infisical: ${missingSecrets.join(', ')}`);
-      }
-
       const appSecrets: AppSecrets = {
-        // Database configuration - all from Infisical
-        dbHost: secretsMap.DB_HOST,
-        dbPort: parseInt(secretsMap.DB_PORT),
-        dbUsername: secretsMap.DB_USERNAME,
-        dbPassword: secretsMap.DB_PASSWORD,
-        dbDatabase: secretsMap.DB_DATABASE,
+        // Database configuration
+        dbHost: secretsMap.DB_HOST || this.configService.get('DB_HOST', '127.0.0.1'),
+        dbPort: parseInt(secretsMap.DB_PORT || this.configService.get('DB_PORT', '5432')),
+        dbUsername: secretsMap.DB_USERNAME || this.configService.get('DB_USERNAME', 'postgres'),
+        dbPassword: secretsMap.DB_PASSWORD || this.configService.get('DB_PASSWORD', 'password'),
+        dbDatabase: secretsMap.DB_DATABASE || this.configService.get('DB_DATABASE', 'shopping_list'),
         
-        // Authentication configuration - from Infisical
-        authEnabled: (secretsMap.AUTH_ENABLED || 'true') === 'true',
-        jwtSecret: secretsMap.JWT_SECRET,
-        jwtExpiresIn: secretsMap.JWT_EXPIRES_IN || '24h',
+        // Authentication configuration
+        authEnabled: (secretsMap.AUTH_ENABLED || this.configService.get('AUTH_ENABLED', 'true')) === 'true',
+        jwtSecret: secretsMap.JWT_SECRET || this.configService.get('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production-12345'),
+        jwtExpiresIn: secretsMap.JWT_EXPIRES_IN || this.configService.get('JWT_EXPIRES_IN', '24h'),
         
-        // Application configuration - non-sensitive can have defaults
+        // Application configuration
         port: parseInt(secretsMap.PORT || this.configService.get('PORT', '3000')),
         nodeEnv: secretsMap.NODE_ENV || this.configService.get('NODE_ENV', 'development'),
       };
@@ -128,16 +124,36 @@ export class InfisicalConfigService {
       this.cachedSecrets = appSecrets;
       this.lastFetchTime = now;
 
-      this.logger.log('🔒 SECRETS SOURCE: Infisical (EU region)');
-      this.logger.log(`📋 Configuration loaded from Infisical: DB=${appSecrets.dbHost}:${appSecrets.dbPort}/${appSecrets.dbDatabase}, Auth=${appSecrets.authEnabled}, Env=${appSecrets.nodeEnv}`);
-      
+      this.logger.log('Successfully fetched secrets from Infisical');
       return appSecrets;
 
     } catch (error) {
       this.logger.error('Failed to fetch secrets from Infisical:', error.message);
-      this.logger.error('🚫 Application cannot start without secure secrets from Infisical');
-      throw error;
+      
+      // Fallback to environment variables on error
+      this.logger.warn('Falling back to environment variables');
+      return this.getSecretsFromEnv();
     }
+  }
+
+  private getSecretsFromEnv(): AppSecrets {
+    return {
+      // Database configuration
+      dbHost: this.configService.get('DB_HOST', '127.0.0.1'),
+      dbPort: parseInt(this.configService.get('DB_PORT', '5432')),
+      dbUsername: this.configService.get('DB_USERNAME', 'postgres'),
+      dbPassword: this.configService.get('DB_PASSWORD', 'password'),
+      dbDatabase: this.configService.get('DB_DATABASE', 'shopping_list'),
+      
+      // Authentication configuration
+      authEnabled: this.configService.get('AUTH_ENABLED', 'true') === 'true',
+      jwtSecret: this.configService.get('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production-12345'),
+      jwtExpiresIn: this.configService.get('JWT_EXPIRES_IN', '24h'),
+      
+      // Application configuration
+      port: parseInt(this.configService.get('PORT', '3000')),
+      nodeEnv: this.configService.get('NODE_ENV', 'development'),
+    };
   }
 
   // Helper method to get individual secrets

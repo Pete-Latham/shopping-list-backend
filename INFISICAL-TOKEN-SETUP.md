@@ -68,10 +68,16 @@ This guide shows you exactly how to set up your Infisical project structure and 
 2. **Create folder**: `/backend`
 3. **Add secrets** in `/backend/`:
    ```
-   DB_PASSWORD = dev_password_123
-   DB_USERNAME = postgres  
-   JWT_SECRET = development_jwt_secret_minimum_256_bits_long_example
+   DB_HOST = postgres
+   DB_PORT = 5432
+   DB_USERNAME = postgres
+   DB_PASSWORD = dev_password_secure_123
+   DB_DATABASE = shopping_list
+   AUTH_ENABLED = true
+   JWT_SECRET = dev-jwt-secret-key-not-for-production
    JWT_EXPIRES_IN = 24h
+   PORT = 3000
+   NODE_ENV = development
    ```
 
 4. **Create folder**: `/frontend`  
@@ -87,10 +93,16 @@ This guide shows you exactly how to set up your Infisical project structure and 
 3. **Add production secrets** (use secure, different values):
    ```
    # /backend/
-   DB_PASSWORD = your_super_secure_production_password_here
+   DB_HOST = postgres
+   DB_PORT = 5432
    DB_USERNAME = postgres
-   JWT_SECRET = production_jwt_secret_must_be_different_and_super_secure_512_bits
+   DB_PASSWORD = your_super_secure_production_password_here
+   DB_DATABASE = shopping_list
+   AUTH_ENABLED = true
+   JWT_SECRET = your-super-secret-jwt-key-change-in-production-12345-SECURE
    JWT_EXPIRES_IN = 24h
+   PORT = 3000
+   NODE_ENV = production
    
    # /frontend/  
    VITE_API_URL = https://your-production-api-domain.com
