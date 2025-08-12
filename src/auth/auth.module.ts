@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User } from './entities/user.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { InfisicalConfigService } from '../config/infisical.config';
 
 @Module({
   imports: [
@@ -14,13 +15,16 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET', 'default-secret-key-change-in-production'),
-        signOptions: { 
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN', '24h') 
-        },
-      }),
+      inject: [InfisicalConfigService],
+      useFactory: async (infisicalConfigService: InfisicalConfigService) => {
+        const secrets = await infisicalConfigService.getSecrets();
+        return {
+          secret: secrets.jwtSecret,
+          signOptions: { 
+            expiresIn: secrets.jwtExpiresIn || '24h'
+          },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

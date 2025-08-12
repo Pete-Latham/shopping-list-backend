@@ -97,25 +97,30 @@ export class InfisicalConfigService {
         return acc;
       }, {} as Record<string, string>);
 
-      // Validate that all required secrets are present in Infisical
-      const requiredSecrets = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_DATABASE', 'JWT_SECRET'];
-      const missingSecrets = requiredSecrets.filter(key => !secretsMap[key]);
-      
-      if (missingSecrets.length > 0) {
-        throw new Error(`Missing required secrets in Infisical: ${missingSecrets.join(', ')}`);
+      // Only validate critical secrets in production
+      const nodeEnv = this.configService.get('NODE_ENV', 'development');
+      if (nodeEnv === 'production') {
+        const requiredSecrets = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD', 'DB_DATABASE', 'JWT_SECRET'];
+        const missingSecrets = requiredSecrets.filter(key => !secretsMap[key]);
+        
+        if (missingSecrets.length > 0) {
+          throw new Error(`Missing required secrets in Infisical: ${missingSecrets.join(', ')}`);
+        }
+      } else {
+        this.logger.log('Development mode: Using fallback values for missing secrets');
       }
 
       const appSecrets: AppSecrets = {
-        // Database configuration - all from Infisical
-        dbHost: secretsMap.DB_HOST,
-        dbPort: parseInt(secretsMap.DB_PORT),
-        dbUsername: secretsMap.DB_USERNAME,
-        dbPassword: secretsMap.DB_PASSWORD,
-        dbDatabase: secretsMap.DB_DATABASE,
+        // Database configuration - prioritize explicit env vars, then Infisical, then fallbacks  
+        dbHost: this.configService.get('DB_HOST') || secretsMap.DB_HOST || 'postgres-dev',
+        dbPort: parseInt(this.configService.get('DB_PORT') || secretsMap.DB_PORT || '5432'),
+        dbUsername: this.configService.get('DB_USERNAME') || secretsMap.DB_USERNAME || 'postgres',
+        dbPassword: this.configService.get('DB_PASSWORD') || secretsMap.DB_PASSWORD || 'password',
+        dbDatabase: this.configService.get('DB_DATABASE') || secretsMap.DB_DATABASE || 'shopping_list',
         
-        // Authentication configuration - from Infisical
+        // Authentication configuration - from Infisical with dev fallbacks
         authEnabled: (secretsMap.AUTH_ENABLED || 'true') === 'true',
-        jwtSecret: secretsMap.JWT_SECRET,
+        jwtSecret: secretsMap.JWT_SECRET || this.configService.get('JWT_SECRET', 'dev-jwt-secret-change-me'),
         jwtExpiresIn: secretsMap.JWT_EXPIRES_IN || '24h',
         
         // Application configuration - non-sensitive can have defaults

@@ -47,14 +47,44 @@ export class ShoppingListsGateway implements OnGatewayConnection, OnGatewayDisco
   async handleConnection(client: AuthenticatedSocket) {
     this.logger.log(`WebSocket connection attempt from client ${(client as any).id}`);
     
-    // TODO: Fix JWT signature verification issue
-    // For now, allow connections without auth to keep real-time updates working
-    client.userId = 1; // Use a placeholder user ID
-    this.logger.log(`User ${client.userId} connected with client ${(client as any).id} (auth temporarily disabled)`);
-    
-    // NOTE: The JWT verification is failing due to signature mismatch
-    // This needs to be investigated - possibly Infisical returning different secrets
-    // or timing issues with secret retrieval
+    try {
+      // Extract token from the auth object sent by the client
+      const token = (client as any).handshake?.auth?.token;
+      
+      if (!token) {
+        this.logger.warn(`Connection rejected - no auth token provided from client ${(client as any).id}`);
+        client.disconnect();
+        return;
+      }
+
+      // Verify the JWT token using the same secret as the REST API
+      let payload;
+      try {
+        payload = await this.jwtService.verifyAsync(token);
+        this.logger.log(`✅ JWT verification successful for client ${(client as any).id}`);
+      } catch (jwtError) {
+        this.logger.error(`❌ JWT verification details for client ${(client as any).id}:`, {
+          error: jwtError.message,
+          tokenPrefix: token.substring(0, 20) + '...',
+        });
+        throw jwtError;
+      }
+      
+      // Extract user ID from the JWT payload
+      client.userId = payload.sub || payload.userId;
+      
+      if (!client.userId) {
+        this.logger.warn(`Connection rejected - invalid token payload from client ${(client as any).id}`);
+        client.disconnect();
+        return;
+      }
+
+      this.logger.log(`✅ User ${client.userId} authenticated and connected with client ${(client as any).id}`);
+      
+    } catch (error) {
+      this.logger.warn(`Connection rejected - JWT verification failed for client ${(client as any).id}: ${error.message}`);
+      client.disconnect();
+    }
   }
 
   handleDisconnect(client: AuthenticatedSocket) {

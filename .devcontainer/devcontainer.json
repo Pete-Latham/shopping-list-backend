@@ -1,0 +1,104 @@
+{
+  "name": "Shopping List Backend Development",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "backend-dev",
+  "workspaceFolder": "/app",
+  
+  // Features to install in the container
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  
+  // VSCode settings for the container
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "sh",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "typescript.preferences.importModuleSpecifier": "relative",
+        
+        // ESLint Configuration for devcontainer
+        "eslint.enable": true,
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        "eslint.workingDirectories": ["/app"],
+        "eslint.run": "onType",
+        "eslint.format.enable": true,
+        "eslint.lintTask.enable": true,
+        "eslint.alwaysShowStatus": true,
+        "eslint.probe": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ],
+        
+        // File associations
+        "files.associations": {
+          "*.ts": "typescript"
+        },
+        
+        // Show problems in Problems panel
+        "problems.showCurrentInStatus": true,
+        "problems.sortOrder": "severity"
+      },
+      
+      // Extensions to install automatically
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-vscode.vscode-typescript-next",
+        "christian-kohler.path-intellisense",
+        "ms-vscode.vscode-json",
+        "ms-docker.docker",
+        "ms-vscode.vscode-docker"
+      ]
+    }
+  },
+
+  // Ports to forward from the container to the host
+  "forwardPorts": [3000, 9229, 5432],
+  "portsAttributes": {
+    "3000": {
+      "label": "Backend API",
+      "onAutoForward": "notify",
+      "protocol": "http",
+      "requireLocalPort": true
+    },
+    "9229": {
+      "label": "Node.js Debug Port"
+    },
+    "5432": {
+      "label": "PostgreSQL Database"
+    }
+  },
+
+  // Commands to run after the container is created
+  "postCreateCommand": "npm install",
+  
+  // Commands to run when the container starts
+  "postStartCommand": "npm run start:dev",
+
+  // Keep container running even if no process is running
+  "shutdownAction": "none",
+
+  // Mount the Docker socket for Docker-in-Docker scenarios
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+
+  // Environment variables
+  "containerEnv": {
+    "NODE_ENV": "development"
+  },
+
+  // Enable init process to handle signals properly
+  "init": true
+}

@@ -1,0 +1,72 @@
+# Docker Compose for Backend Dev Containers
+# This creates a consistent development environment
+
+services:
+  # Backend Development Service (for dev containers)
+  backend-dev:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    container_name: shopping-list-backend-devcontainer
+    ports:
+      - "3000:3000"  # API server
+      - "9229:9229"  # Node.js debug port
+    environment:
+      - NODE_ENV=development
+      - DOCKER_CONTAINER=true
+      # Infisical configuration
+      - INFISICAL_TOKEN=${INFISICAL_TOKEN}
+      - INFISICAL_SITE_URL=${INFISICAL_SITE_URL}
+      - INFISICAL_PROJECT_ID=${INFISICAL_PROJECT_ID}
+      - INFISICAL_ENV=${INFISICAL_ENV}
+      # Only override database host for container networking
+      - DB_HOST=postgres-dev
+    volumes:
+      # Mount source code for hot reload
+      - ..:/app
+      - /app/node_modules  # Preserve node_modules
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    networks:
+      - shopping-list-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development Database (shared with frontend devcontainer)
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: shopping-list-postgres-devcontainer
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=shopping_list
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - shopping-list-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopping_list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres-dev-data:
+    driver: local
+
+networks:
+  shopping-list-network:
+    external: true
