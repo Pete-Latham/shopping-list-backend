@@ -20,6 +20,11 @@ export interface AppSecrets {
   nodeEnv: string;
 }
 
+export interface FrontendConfig {
+  apiUrl: string;
+  enableMockApi: boolean;
+}
+
 @Injectable()
 export class InfisicalConfigService {
   private readonly logger = new Logger(InfisicalConfigService.name);
@@ -150,5 +155,53 @@ export class InfisicalConfigService {
   async refreshSecrets(): Promise<void> {
     this.cachedSecrets = null;
     await this.getSecrets();
+  }
+
+  // Get frontend configuration from Infisical
+  async getFrontendConfig(): Promise<FrontendConfig> {
+    if (!this.infisicalClient) {
+      throw new Error('Infisical client not available - secure secrets management is required');
+    }
+
+    try {
+      const environment = this.configService.get('INFISICAL_ENV', 'Production');
+      const projectId = this.configService.get('INFISICAL_PROJECT_ID');
+
+      if (!projectId) {
+        throw new Error('INFISICAL_PROJECT_ID is required');
+      }
+
+      this.logger.log(`🔍 Fetching frontend config from Infisical: project=${projectId}, env=${environment}, path=/frontend`);
+
+      // Fetch frontend secrets using the correct SDK v4 API
+      const secretsResponse = await this.infisicalClient.secrets().listSecrets({
+        environment,
+        projectId,
+        secretPath: '/frontend',
+      });
+
+      // Transform Infisical secrets to our format
+      const secretsMap = secretsResponse.secrets.reduce((acc, secret) => {
+        acc[secret.secretKey] = secret.secretValue;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const frontendConfig: FrontendConfig = {
+        // Map the secrets we know exist in Infisical
+        apiUrl: secretsMap.VITE_APP_URL || secretsMap.VITE_API_URL || '/api',
+        enableMockApi: secretsMap.VITE_USE_MOCK_API === 'true',
+      };
+
+      this.logger.log(`📋 Frontend configuration loaded from Infisical:`, {
+        apiUrl: frontendConfig.apiUrl,
+        mockApi: frontendConfig.enableMockApi
+      });
+
+      return frontendConfig;
+
+    } catch (error) {
+      this.logger.error('Failed to fetch frontend config from Infisical:', error.message);
+      throw error;
+    }
   }
 }
