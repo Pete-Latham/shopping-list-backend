@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShoppingList, ShoppingListItem } from '../entities';
+import { ShoppingListsGateway } from './shopping-lists.gateway';
 
 @Injectable()
 export class ShoppingListsService {
@@ -10,6 +11,8 @@ export class ShoppingListsService {
     private shoppingListRepository: Repository<ShoppingList>,
     @InjectRepository(ShoppingListItem)
     private shoppingListItemRepository: Repository<ShoppingListItem>,
+    @Inject(forwardRef(() => ShoppingListsGateway))
+    private shoppingListsGateway: ShoppingListsGateway,
   ) {}
 
   async findAll(): Promise<ShoppingList[]> {
@@ -27,16 +30,28 @@ export class ShoppingListsService {
 
   async create(createShoppingListDto: { name: string; description?: string }): Promise<ShoppingList> {
     const shoppingList = this.shoppingListRepository.create(createShoppingListDto);
-    return this.shoppingListRepository.save(shoppingList);
+    const savedList = await this.shoppingListRepository.save(shoppingList);
+    
+    // Broadcast to all connected clients (they can filter on their end)
+    this.shoppingListsGateway.server?.emit('list-created', savedList);
+    
+    return savedList;
   }
 
   async update(id: number, updateShoppingListDto: { name?: string; description?: string }): Promise<ShoppingList | null> {
     await this.shoppingListRepository.update(id, updateShoppingListDto);
-    return this.findOne(id);
+    const updatedList = await this.findOne(id);
+    
+    if (updatedList) {
+      this.shoppingListsGateway.broadcastListUpdated(id, updatedList);
+    }
+    
+    return updatedList;
   }
 
   async remove(id: number): Promise<void> {
     await this.shoppingListRepository.delete(id);
+    this.shoppingListsGateway.broadcastListDeleted(id);
   }
 
   async addItem(listId: number, createItemDto: { name: string; quantity?: number; unit?: string; notes?: string }): Promise<ShoppingListItem> {
@@ -48,15 +63,38 @@ export class ShoppingListsService {
       ...createItemDto,
       shoppingList,
     });
-    return this.shoppingListItemRepository.save(item);
+    const savedItem = await this.shoppingListItemRepository.save(item);
+    
+    this.shoppingListsGateway.broadcastItemAdded(listId, savedItem);
+    
+    return savedItem;
   }
 
   async updateItem(itemId: number, updateItemDto: { name?: string; quantity?: number; unit?: string; completed?: boolean; notes?: string }): Promise<ShoppingListItem | null> {
     await this.shoppingListItemRepository.update(itemId, updateItemDto);
-    return this.shoppingListItemRepository.findOne({ where: { id: itemId } });
+    const updatedItem = await this.shoppingListItemRepository.findOne({ 
+      where: { id: itemId },
+      relations: ['shoppingList']
+    });
+    
+    if (updatedItem) {
+      this.shoppingListsGateway.broadcastItemUpdated(updatedItem.shoppingList.id, updatedItem);
+    }
+    
+    return updatedItem;
   }
 
   async removeItem(itemId: number): Promise<void> {
+    // Get the item first to know which list it belongs to
+    const item = await this.shoppingListItemRepository.findOne({ 
+      where: { id: itemId },
+      relations: ['shoppingList']
+    });
+    
     await this.shoppingListItemRepository.delete(itemId);
+    
+    if (item) {
+      this.shoppingListsGateway.broadcastItemDeleted(item.shoppingList.id, itemId);
+    }
   }
 }

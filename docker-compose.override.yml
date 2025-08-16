@@ -7,6 +7,10 @@ services:
       target: builder
     environment:
       NODE_ENV: development
+      # Override database host for Docker container networking
+      DB_HOST: postgres
+    env_file:
+      - .env.local  # Load Infisical configuration from .env.local
     volumes:
       - .:/app
       - /app/node_modules

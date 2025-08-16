@@ -1,27 +1,42 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
+import { ItemsModule } from './items/items.module';
+import { AuthModule } from './auth/auth.module';
+import { ConfigModule } from './config/config.module';
+import { InfisicalConfigService } from './config/infisical.config';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
+    ConfigModule,
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService, infisicalConfig: InfisicalConfigService) => {
+        const secrets = await infisicalConfig.getSecrets();
+        
+        // Allow Docker environment override for DB_HOST
+        const dbHost = process.env.DB_HOST || secrets.dbHost;
+        
+        return {
+          type: 'postgres',
+          host: dbHost,
+          port: secrets.dbPort,
+          username: secrets.dbUsername,
+          password: secrets.dbPassword,
+          database: secrets.dbDatabase,
+          autoLoadEntities: true,
+          synchronize: false, // Disabled - using migrations instead
+          migrationsRun: secrets.nodeEnv === 'production', // Auto-run migrations in production
+        };
+      },
+      inject: [ConfigService, InfisicalConfigService],
     }),
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: parseInt(process.env.DB_PORT || '5432') || 5432,
-      username: process.env.DB_USERNAME || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
-      database: process.env.DB_DATABASE || 'shopping_list',
-      autoLoadEntities: true,
-      synchronize: false, // Disabled - using migrations instead
-      migrationsRun: process.env.NODE_ENV === 'production', // Auto-run migrations in production
-    }),
+    AuthModule,
     ShoppingListsModule,
+    ItemsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

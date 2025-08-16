@@ -1,0 +1,25 @@
+# Development Dockerfile for Shopping List Backend
+FROM node:20-alpine
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci && npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Expose ports for API and debugging
+EXPOSE 3000 9229
+
+# Start the application in development mode with debugging
+CMD ["npm", "run", "start:dev"]

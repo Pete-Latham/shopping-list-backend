@@ -33,12 +33,12 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: password
-      DB_DATABASE: shopping_list
       PORT: 3000
+      # Infisical Configuration - these will be loaded from .env.local when available
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+      INFISICAL_ENV: ${INFISICAL_ENV:-Production}
+      INFISICAL_SITE_URL: ${INFISICAL_SITE_URL:-https://eu.infisical.com}
     depends_on:
       postgres:
         condition: service_healthy
