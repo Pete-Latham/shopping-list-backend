@@ -28,7 +28,7 @@ import { InfisicalConfigService } from '../config/infisical.config';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, InfisicalConfigService],
   exports: [AuthService, PassportModule],
 })
 export class AuthModule {}

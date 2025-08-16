@@ -12,6 +12,7 @@ export interface AppSecrets {
   
   // Authentication secrets
   authEnabled: boolean;
+  disableUserRegistration: boolean;
   jwtSecret: string;
   jwtExpiresIn: string;
   
@@ -23,6 +24,7 @@ export interface AppSecrets {
 export interface FrontendConfig {
   apiUrl: string;
   enableMockApi: boolean;
+  disableUserRegistration: boolean;
 }
 
 @Injectable()
@@ -119,7 +121,8 @@ export class InfisicalConfigService {
         dbDatabase: this.configService.get('DB_DATABASE') || secretsMap.DB_DATABASE || 'shopping_list',
         
         // Authentication configuration - from Infisical with dev fallbacks
-        authEnabled: (secretsMap.AUTH_ENABLED || 'true') === 'true',
+        authEnabled: (secretsMap.AUTH_ENABLED || 'true').toLowerCase() === 'true',
+        disableUserRegistration: (secretsMap.DISABLE_USER_REGISTRATION || 'true').toLowerCase() === 'true',
         jwtSecret: secretsMap.JWT_SECRET || this.configService.get('JWT_SECRET', 'dev-jwt-secret-change-me'),
         jwtExpiresIn: secretsMap.JWT_EXPIRES_IN || '24h',
         
@@ -176,30 +179,46 @@ export class InfisicalConfigService {
         throw new Error('INFISICAL_PROJECT_ID is required');
       }
 
-      this.logger.log(`🔍 Fetching frontend config from Infisical: project=${projectId}, env=${environment}, path=/frontend`);
+      this.logger.log(`🔍 Fetching frontend config from Infisical: project=${projectId}, env=${environment}`);
 
-      // Fetch frontend secrets using the correct SDK v4 API
-      const secretsResponse = await this.infisicalClient.secrets().listSecrets({
+      // Fetch frontend-specific secrets from /frontend path
+      const frontendSecretsResponse = await this.infisicalClient.secrets().listSecrets({
         environment,
         projectId,
         secretPath: '/frontend',
       });
 
-      // Transform Infisical secrets to our format
-      const secretsMap = secretsResponse.secrets.reduce((acc, secret) => {
+      // Fetch backend secrets to get the DISABLE_USER_REGISTRATION setting
+      const backendSecretsResponse = await this.infisicalClient.secrets().listSecrets({
+        environment,
+        projectId,
+        secretPath: '/backend',
+      });
+
+      // Transform frontend secrets to our format
+      const frontendSecretsMap = frontendSecretsResponse.secrets.reduce((acc, secret) => {
+        acc[secret.secretKey] = secret.secretValue;
+        return acc;
+      }, {} as Record<string, string>);
+
+      // Transform backend secrets to get the registration setting
+      const backendSecretsMap = backendSecretsResponse.secrets.reduce((acc, secret) => {
         acc[secret.secretKey] = secret.secretValue;
         return acc;
       }, {} as Record<string, string>);
 
       const frontendConfig: FrontendConfig = {
-        // Map the secrets we know exist in Infisical
-        apiUrl: secretsMap.VITE_APP_URL || secretsMap.VITE_API_URL || '/api',
-        enableMockApi: secretsMap.VITE_USE_MOCK_API === 'true',
+        // Map the frontend-specific secrets
+        apiUrl: frontendSecretsMap.VITE_APP_URL || frontendSecretsMap.VITE_API_URL || '/api',
+        enableMockApi: frontendSecretsMap.VITE_USE_MOCK_API === 'true',
+        // Get the registration setting from backend secrets (default to disabled for security)
+        disableUserRegistration: (backendSecretsMap.DISABLE_USER_REGISTRATION || 'true').toLowerCase() === 'true',
       };
 
       this.logger.log(`📋 Frontend configuration loaded from Infisical:`, {
         apiUrl: frontendConfig.apiUrl,
-        mockApi: frontendConfig.enableMockApi
+        mockApi: frontendConfig.enableMockApi,
+        disableUserRegistration: frontendConfig.disableUserRegistration
       });
 
       return frontendConfig;

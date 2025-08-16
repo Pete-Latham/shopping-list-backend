@@ -3,12 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RegisterDto, LoginDto, ChangePasswordDto, RefreshTokenDto, LoginResponse, AuthUser, RefreshResponse } from './dto/auth.dto';
+import { InfisicalConfigService } from '../config/infisical.config';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private infisicalConfigService: InfisicalConfigService,
   ) {}
 
   @Get('status')
@@ -27,6 +29,12 @@ export class AuthController {
     
     if (!authEnabled) {
       throw new Error('Registration is not available when authentication is disabled');
+    }
+
+    // Check if user registration is disabled via Infisical
+    const secrets = await this.infisicalConfigService.getSecrets();
+    if (secrets.disableUserRegistration) {
+      throw new Error('User registration has been disabled by administrator');
     }
 
     return this.authService.register(registerDto);

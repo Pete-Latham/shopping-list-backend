@@ -1,0 +1,100 @@
+name: Deploy to Synology NAS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allow manual triggers
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: self-hosted # This will run on your Synology NAS
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Deploy to Synology
+      env:
+        INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
+        INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+        INFISICAL_ENV: ${{ secrets.INFISICAL_ENV }}
+      run: |
+        cd /volume1/docker/shopping-list
+        
+        # Create/update environment file
+        cat > .env.local << EOF
+        INFISICAL_TOKEN=${INFISICAL_TOKEN}
+        INFISICAL_PROJECT_ID=${INFISICAL_PROJECT_ID}
+        INFISICAL_ENV=${INFISICAL_ENV:-Production}
+        INFISICAL_SITE_URL=https://eu.infisical.com
+        EOF
+        
+        # Pull latest image
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        
+        # Update and restart backend service
+        docker-compose pull app
+        docker-compose up -d app
+        
+        # Wait for health check
+        echo "Waiting for backend to be healthy..."
+        for i in {1..30}; do
+          if curl -f http://localhost:3000/health > /dev/null 2>&1; then
+            echo "Backend is healthy!"
+            break
+          fi
+          echo "Attempt $i/30: Backend not ready yet..."
+          sleep 10
+        done
+        
+        # Cleanup old images
+        docker image prune -f
+
+    - name: Verify deployment
+      run: |
+        # Test the deployment
+        curl -f http://localhost:3000/health || exit 1
+        echo "✅ Backend deployment successful!"
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "❌ Deployment failed! Check logs for details."
+        # You could add Slack/Discord/email notifications here
