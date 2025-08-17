@@ -30,6 +30,7 @@ import { InfisicalConfigService } from './config/infisical.config';
           autoLoadEntities: true,
           synchronize: false, // Disabled - using migrations instead
           migrationsRun: secrets.nodeEnv === 'production', // Auto-run migrations in production
+          migrations: [__dirname + '/migrations/*.js'], // Add migrations path for compiled JS
         };
       },
       inject: [ConfigService, InfisicalConfigService],
