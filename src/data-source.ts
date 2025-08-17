@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import { ShoppingList } from './entities/shopping-list.entity';
 import { ShoppingListItem } from './entities/shopping-list-item.entity';
-import { User } from './entities/user.entity';
+import { User } from './auth/entities/user.entity';
 
 // Load environment variables
 config();
